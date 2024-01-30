@@ -70,7 +70,9 @@ def main():
             args=(
                 [(source_path, 1), (diff_path, 1)], lambda x, y: x-y, new_forest_raster_path,
                 gdal.GDT_Float32, 0),
+            target_path_list=[new_forest_raster_path],
             kwargs={'allow_different_blocksize': True})
+        diff_path = new_forest_raster_path
         overlap_raster_info = geoprocessing.get_raster_info(OVERLAP_RASTER_PATH)
         projected_raster_path = os.path.join(WORKING_DIR, f'diff_{os.path.basename(new_forest_raster_path)}')
         warp_task = task_graph.add_task(
@@ -91,6 +93,7 @@ def main():
                 [(projected_raster_path, 1), (OVERLAP_RASTER_PATH, 1)], _mask_raster_op, masked_forest_raster_path,
                 gdal.GDT_Float32, 0),
             kwargs={'allow_different_blocksize': True},
+            target_path_list=[masked_forest_raster_path],
             dependent_task_list=[warp_task])
 
         cna_country_stats = task_graph.add_task(
