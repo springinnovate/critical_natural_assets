@@ -46,48 +46,109 @@ os.makedirs(WORKING_DIR, exist_ok=True)
 
 def main():
     table_file = open('summary.csv', 'w')
-    table_file.write('country name,RF,RFAF,RFAFRS\n')
-    country_stat_results = collections.default_dict(dict)
+    table_file.write(
+        'country name,'
+        'RF_country_coverage,RFAF_country_coverage,RFAFRS_country_coverage,'
+        'RF_country_avg_coverage,RFAF_country_avg_coverage,RFAFRS_country_avg_coverage,'
+        'RF_country_cna_coverage,RFAF_country_cna_coverage,RFAFRS_country_cna_coverage,'
+        'RF_country_cna_avg_coverage,RFAF_country_cna_avg_coverage,RFAFRS_country_cna_avg_coverage,'
+        '\n')
+    country_stat_results = collections.defaultdict(lambda: collections.defaultdict(dict))
     task_graph = taskgraph.TaskGraph(WORKING_DIR, -1)
-    for source_index, diff_index in [(1, 0), (2, 0), (3, 0)]:
+    country_stats_list = []
+    diff_path = FOREST_COVER_RASTER_MAP['Hist']
+    diff_var = ''
+    for source_index, diff_index in [(1, 0), (2, 1), (3, 2)]:
         source_var = VARIABLES[source_index]
-        diff_var = VARIABLES[diff_index]
+        diff_var += f'_{VARIABLES[diff_index]}'
         source_path = FOREST_COVER_RASTER_MAP[source_var]
-        diff_path = FOREST_COVER_RASTER_MAP[diff_var]
-        new_forest_raster_path = f'{source_var}_diff_{diff_var}.tif'
+        #diff_path = FOREST_COVER_RASTER_MAP[diff_var]
+        new_forest_raster_path = f'{source_var}_diff{diff_var}.tif'
         print(f'processing {new_forest_raster_path}')
-        geoprocessing.raster_calculator(
-            [(source_path, 1), (diff_path, 1)], lambda x, y: x-y, new_forest_raster_path,
-            gdal.GDT_Float32, None, allow_different_blocksize=True)
+        diff_task = task_graph.add_task(
+            func=geoprocessing.raster_calculator,
+            args=(
+                [(source_path, 1), (diff_path, 1)], lambda x, y: x-y, new_forest_raster_path,
+                gdal.GDT_Float32, 0),
+            kwargs={'allow_different_blocksize': True})
         overlap_raster_info = geoprocessing.get_raster_info(OVERLAP_RASTER_PATH)
         projected_raster_path = os.path.join(WORKING_DIR, f'diff_{os.path.basename(new_forest_raster_path)}')
-        geoprocessing.warp_raster(
-            new_forest_raster_path, overlap_raster_info['pixel_size'], projected_raster_path,
-            'near', target_bb=overlap_raster_info['bounding_box'],
-            target_projection_wkt=overlap_raster_info['projection_wkt'])
+        warp_task = task_graph.add_task(
+            func=geoprocessing.warp_raster,
+            args=(
+                new_forest_raster_path, overlap_raster_info['pixel_size'], projected_raster_path,
+                'near'),
+            kwargs={
+                'target_bb': overlap_raster_info['bounding_box'],
+                'target_projection_wkt': overlap_raster_info['projection_wkt']},
+            dependent_task_list=[diff_task],
+            target_path_list=[projected_raster_path])
 
         masked_forest_raster_path = f'masked_{os.path.basename(new_forest_raster_path)}'
-        geoprocessing.raster_calculator(
-            [(projected_raster_path, 1), (OVERLAP_RASTER_PATH, 1)], _mask_raster_op, masked_forest_raster_path,
-            gdal.GDT_Float32, None, allow_different_blocksize=True)
+        mask_task = task_graph.add_task(
+            func=geoprocessing.raster_calculator,
+            args=(
+                [(projected_raster_path, 1), (OVERLAP_RASTER_PATH, 1)], _mask_raster_op, masked_forest_raster_path,
+                gdal.GDT_Float32, 0),
+            kwargs={'allow_different_blocksize': True},
+            dependent_task_list=[warp_task])
 
-        country_stats = task_graph.add_task(
+        cna_country_stats = task_graph.add_task(
             func=geoprocessing.zonal_statistics,
             args=(
                 (masked_forest_raster_path, 1), COUNTRY_VECTOR_PATH),
             kwargs={'working_dir': WORKING_DIR},
+            dependent_task_list=[mask_task],
             store_result=True)
+
+        raw_tree_country_stats = task_graph.add_task(
+            func=geoprocessing.zonal_statistics,
+            args=(
+                (projected_raster_path, 1), COUNTRY_VECTOR_PATH),
+            kwargs={'working_dir': WORKING_DIR},
+            dependent_task_list=[mask_task],
+            store_result=True)
+
+        country_stats_list.append((cna_country_stats, raw_tree_country_stats, source_var))
+    for cna_country_stats, raw_tree_country_stats, source_var in country_stats_list:
         country_vector = gdal.OpenEx(COUNTRY_VECTOR_PATH, gdal.OF_VECTOR)
         country_layer = country_vector.GetLayer()
         for country_feature in country_layer:
             country_name = country_feature.GetField('nev_name')
-            local_stats = country_stats.get()[country_feature.GetFID()]
-            avg_pct = local_stats['sum']/local_stats['count']
-            country_stat_results[country_name][diff_var] = avg_pct
+            cna_local_stats = cna_country_stats.get()[country_feature.GetFID()]
+            if cna_local_stats['count'] == 0:
+                cna_local_stats['count'] = 1
+            country_stat_results[country_name][source_var]['cna_avg'] = cna_local_stats['sum']/cna_local_stats['count']
+            country_stat_results[country_name][source_var]['cna_coverage'] = 100*cna_local_stats['count']/(cna_local_stats['nodata_count']+cna_local_stats['count'])
 
-    for country_name in sorted(country_stats):
-        local_stats = country_stats[country_name]
-        table_file.write(f"{country_name},{local_stats['RF']},{local_stats['RFAF']},{local_stats['RFAFRS']}\n")
+            raw_tree_local_stats = raw_tree_country_stats.get()[country_feature.GetFID()]
+            if raw_tree_local_stats['count'] == 0:
+                raw_tree_local_stats['count'] = 1
+            country_stat_results[country_name][source_var]['raw_tree_avg'] = raw_tree_local_stats['sum']/raw_tree_local_stats['count']
+            country_stat_results[country_name][source_var]['raw_tree_coverage'] = 100*raw_tree_local_stats['count']/(raw_tree_local_stats['nodata_count']+raw_tree_local_stats['count'])
+
+
+    # what fraction of the pixels have a positive change in diff
+    # what's the average of the % of forest pixels in the diff
+    # what percent of the country that is CNA overlaps with a positive diff pixel
+    # what's the average of the % of forest pixels CNA
+
+    for country_name in sorted(country_stat_results):
+        local_stats = country_stat_results[country_name]
+        table_file.write(
+            f"{country_name},"
+            f"{local_stats['RF']['raw_tree_coverage']},{local_stats['RFAF']['raw_tree_coverage']},{local_stats['RFAFRS']['raw_tree_coverage']},"
+            f"{local_stats['RF']['raw_tree_avg']},{local_stats['RFAF']['raw_tree_avg']},{local_stats['RFAFRS']['raw_tree_avg']},"
+            f"{local_stats['RF']['cna_coverage']},{local_stats['RFAF']['cna_coverage']},{local_stats['RFAFRS']['cna_coverage']},"
+            f"{local_stats['RF']['cna_avg']},{local_stats['RFAF']['cna_avg']},{local_stats['RFAFRS']['cna_avg']},"
+            "\n")
+
+        # 'country name,'
+        # 'RF_country_coverage,RFAF_country_coverage,RFAFRS_country_coverage,'
+        # 'RF_country_avg_coverage,RFAF_country_avg_coverage,RFAFRS_country_avg_coverage,'
+        # 'RF_country_cna_coverage,RFAF_country_cna_coverage,RFAFRS_country_cna_coverage,'
+        # 'RF_country_cna_avg_coverage,RFAF_country_cna_avg_coverage,RFAFRS_country_cna_avg_coverage,'
+        # '\n')
 
 def _mask_raster_op(base_array, mask_array):
     result = base_array.copy()
