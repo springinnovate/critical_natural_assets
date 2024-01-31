@@ -52,6 +52,7 @@ def main():
         'RF_country_avg_coverage,AF_country_avg_coverage,RS_country_avg_coverage,'
         'RF_country_cna_coverage,AF_country_cna_coverage,RS_country_cna_coverage,'
         'RF_country_cna_avg_coverage,AF_country_cna_avg_coverage,RS_country_cna_avg_coverage,'
+        'CNA_country_percent_cover,'
         'area_sq_km,'
         '\n')
     country_stat_results = collections.defaultdict(lambda: collections.defaultdict(dict))
@@ -109,9 +110,25 @@ def main():
             kwargs={'working_dir': WORKING_DIR},
             dependent_task_list=[mask_task],
             store_result=True)
-
         country_stats_list.append((cna_country_stats, raw_tree_country_stats, source_var))
+
+    cna_mask_raster_path = os.path.join(WORKING_DIR, 'cna_mask.tif')
+    cna_mask_task = task_graph.add_task(
+        func=geoprocessing.raster_calculator,
+        args=(
+            [(OVERLAP_RASTER_PATH, 1)], lambda x: x>2, cna_mask_raster_path, gdal.GDT_Float32, 0),
+        kwargs={'allow_different_blocksize': True},
+        target_path_list=[cna_mask_raster_path])
+    cna_in_country_stats = task_graph.add_task(
+        func=geoprocessing.zonal_statistics,
+        args=(
+            (cna_mask_raster_path, 1), COUNTRY_VECTOR_PATH),
+        kwargs={'working_dir': WORKING_DIR},
+        dependent_task_list=[cna_mask_task],
+        store_result=True)
+
     global_stats = collections.defaultdict(lambda: collections.defaultdict(float))
+    country_stat_results['0_GLOBAL']['area_sq_km'] = 0
     for cna_country_stats, raw_tree_country_stats, source_var in country_stats_list:
         country_vector = gdal.OpenEx(COUNTRY_VECTOR_PATH, gdal.OF_VECTOR)
         country_layer = country_vector.GetLayer()
@@ -141,7 +158,13 @@ def main():
                 country_stat_results[country_name][source_var]['raw_tree_avg'] = 0
                 country_stat_results[country_name][source_var]['raw_tree_coverage'] = 0
 
-            country_stat_results[country_name]['area_sq_km'] = country_feature.GetField('area')/1000**2
+    country_layer.ResetReading()
+    for country_feature in country_layer:
+        country_name = country_feature.GetField('nev_name')
+        country_stat_results[country_name]['area_sq_km'] = country_feature.GetField('area')/1000**2
+        cna_stats = cna_in_country_stats.get()[country_feature.GetFID()]
+        country_stat_results[country_name]['CNA_country_percent_cover'] = cna_stats['count']/(cna_stats['count']+cna_stats['nodata_count'])
+        country_stat_results['0_GLOBAL']['area_sq_km'] += country_stat_results[country_name]['area_sq_km']
 
     for source_var in global_stats:
         country_stat_results['0_GLOBAL'][source_var]['cna_avg'] = global_stats[source_var]['sum']/global_stats[source_var]['count']
@@ -162,6 +185,7 @@ def main():
             f"{local_stats['RF']['raw_tree_avg']},{local_stats['RFAF']['raw_tree_avg']},{local_stats['RFAFRS']['raw_tree_avg']},"
             f"{local_stats['RF']['cna_coverage']},{local_stats['RFAF']['cna_coverage']},{local_stats['RFAFRS']['cna_coverage']},"
             f"{local_stats['RF']['cna_avg']},{local_stats['RFAF']['cna_avg']},{local_stats['RFAFRS']['cna_avg']},"
+            f"{country_stat_results[country_name]['CNA_country_percent_cover']},"
             f"{local_stats['area_sq_km']}"
             "\n")
 
