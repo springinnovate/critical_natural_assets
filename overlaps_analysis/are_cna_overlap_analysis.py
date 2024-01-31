@@ -48,10 +48,10 @@ def main():
     table_file = open('summary.csv', 'w')
     table_file.write(
         'country name,'
-        'RF_country_coverage,RFAF_country_coverage,RFAFRS_country_coverage,'
-        'RF_country_avg_coverage,RFAF_country_avg_coverage,RFAFRS_country_avg_coverage,'
-        'RF_country_cna_coverage,RFAF_country_cna_coverage,RFAFRS_country_cna_coverage,'
-        'RF_country_cna_avg_coverage,RFAF_country_cna_avg_coverage,RFAFRS_country_cna_avg_coverage,'
+        'RF_country_coverage,AF_country_coverage,RS_country_coverage,'
+        'RF_country_avg_coverage,AF_country_avg_coverage,RS_country_avg_coverage,'
+        'RF_country_cna_coverage,AF_country_cna_coverage,RS_country_cna_coverage,'
+        'RF_country_cna_avg_coverage,AF_country_cna_avg_coverage,RS_country_cna_avg_coverage,'
         'area_sq_km,'
         '\n')
     country_stat_results = collections.defaultdict(lambda: collections.defaultdict(dict))
@@ -122,19 +122,25 @@ def main():
             global_stats[source_var]['count'] += cna_local_stats['count']
             global_stats[source_var]['nodata_count'] += cna_local_stats['nodata_count']
 
-            if cna_local_stats['count'] == 0:
-                cna_local_stats['count'] = 1
-            country_stat_results[country_name][source_var]['cna_avg'] = cna_local_stats['sum']/cna_local_stats['count']
-            country_stat_results[country_name][source_var]['cna_coverage'] = 100*cna_local_stats['count']/(cna_local_stats['nodata_count']+cna_local_stats['count'])
+            try:
+                country_stat_results[country_name][source_var]['cna_avg'] = cna_local_stats['sum']/cna_local_stats['count']
+                country_stat_results[country_name][source_var]['cna_coverage'] = 100*cna_local_stats['count']/(cna_local_stats['nodata_count']+cna_local_stats['count'])
+            except ZeroDivisionError:
+                country_stat_results[country_name][source_var]['cna_avg'] = 0
+                country_stat_results[country_name][source_var]['cna_coverage'] = 0
+
 
             raw_tree_local_stats = raw_tree_country_stats.get()[country_feature.GetFID()]
             global_stats[source_var]['raw_sum'] += raw_tree_local_stats['sum']
             global_stats[source_var]['raw_count'] += raw_tree_local_stats['count']
             global_stats[source_var]['raw_nodata_count'] += raw_tree_local_stats['nodata_count']
-            if raw_tree_local_stats['count'] == 0:
-                raw_tree_local_stats['count'] = 1
-            country_stat_results[country_name][source_var]['raw_tree_avg'] = raw_tree_local_stats['sum']/raw_tree_local_stats['count']
-            country_stat_results[country_name][source_var]['raw_tree_coverage'] = 100*raw_tree_local_stats['count']/(raw_tree_local_stats['nodata_count']+raw_tree_local_stats['count'])
+            try:
+                country_stat_results[country_name][source_var]['raw_tree_avg'] = raw_tree_local_stats['sum']/raw_tree_local_stats['count']
+                country_stat_results[country_name][source_var]['raw_tree_coverage'] = 100*raw_tree_local_stats['count']/(raw_tree_local_stats['nodata_count']+raw_tree_local_stats['count'])
+            except ZeroDivisionError:
+                country_stat_results[country_name][source_var]['raw_tree_avg'] = 0
+                country_stat_results[country_name][source_var]['raw_tree_coverage'] = 0
+
             country_stat_results[country_name]['area_sq_km'] = country_feature.GetField('area')/1000**2
 
     for source_var in global_stats:
