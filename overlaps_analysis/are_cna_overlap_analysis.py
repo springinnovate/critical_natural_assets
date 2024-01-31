@@ -164,6 +164,8 @@ def main():
         country_stat_results[country_name]['area_sq_km'] = country_feature.GetField('area')/1000**2
         cna_stats = cna_in_country_stats.get()[country_feature.GetFID()]
         country_stat_results[country_name]['CNA_country_percent_cover'] = 100*cna_stats['count']/(cna_stats['count']+cna_stats['nodata_count'])
+        global_stats['cna_count'] = cna_stats['count']
+        global_stats['nodata_cna_count'] = cna_stats['nodata_count']
         country_stat_results['0_GLOBAL']['area_sq_km'] += country_stat_results[country_name]['area_sq_km']
 
     for source_var in global_stats:
@@ -172,6 +174,7 @@ def main():
         country_stat_results['0_GLOBAL'][source_var]['raw_tree_avg'] = global_stats[source_var]['raw_sum']/global_stats[source_var]['raw_count']
         country_stat_results['0_GLOBAL'][source_var]['raw_tree_coverage'] = global_stats[source_var]['raw_sum']/(global_stats[source_var]['raw_nodata_count']+global_stats[source_var]['count'])
 
+    country_stat_results['0_GLOBAL']['CNA_country_percent_cover'] = 100*global_stats['cna_count']/(global_stats['cna_count']+global_stats['nodata_cna_count'])
     # what fraction of the pixels have a positive change in diff
     # what's the average of the % of forest pixels in the diff
     # what percent of the country that is CNA overlaps with a positive diff pixel
