@@ -52,18 +52,17 @@ def main():
         'RF_country_avg_coverage,RFAF_country_avg_coverage,RFAFRS_country_avg_coverage,'
         'RF_country_cna_coverage,RFAF_country_cna_coverage,RFAFRS_country_cna_coverage,'
         'RF_country_cna_avg_coverage,RFAF_country_cna_avg_coverage,RFAFRS_country_cna_avg_coverage,'
+        'area_sq_km,'
         '\n')
     country_stat_results = collections.defaultdict(lambda: collections.defaultdict(dict))
     task_graph = taskgraph.TaskGraph(WORKING_DIR, -1)
     country_stats_list = []
-    diff_path = FOREST_COVER_RASTER_MAP['Hist']
-    diff_var = ''
     for source_index, diff_index in [(1, 0), (2, 1), (3, 2)]:
         source_var = VARIABLES[source_index]
-        diff_var += f'_{VARIABLES[diff_index]}'
+        diff_var = VARIABLES[diff_index]
         source_path = FOREST_COVER_RASTER_MAP[source_var]
-        #diff_path = FOREST_COVER_RASTER_MAP[diff_var]
-        new_forest_raster_path = f'{source_var}_diff{diff_var}.tif'
+        diff_path = FOREST_COVER_RASTER_MAP[diff_var]
+        new_forest_raster_path = f'{source_var}_diff_{diff_var}.tif'
         print(f'processing {new_forest_raster_path}')
         diff_task = task_graph.add_task(
             func=geoprocessing.raster_calculator,
@@ -72,7 +71,6 @@ def main():
                 gdal.GDT_Float32, 0),
             target_path_list=[new_forest_raster_path],
             kwargs={'allow_different_blocksize': True})
-        diff_path = new_forest_raster_path
         overlap_raster_info = geoprocessing.get_raster_info(OVERLAP_RASTER_PATH)
         projected_raster_path = os.path.join(WORKING_DIR, f'diff_{os.path.basename(new_forest_raster_path)}')
         warp_task = task_graph.add_task(
@@ -113,23 +111,37 @@ def main():
             store_result=True)
 
         country_stats_list.append((cna_country_stats, raw_tree_country_stats, source_var))
+    global_stats = collections.defaultdict(lambda: collections.defaultdict(float))
     for cna_country_stats, raw_tree_country_stats, source_var in country_stats_list:
         country_vector = gdal.OpenEx(COUNTRY_VECTOR_PATH, gdal.OF_VECTOR)
         country_layer = country_vector.GetLayer()
         for country_feature in country_layer:
             country_name = country_feature.GetField('nev_name')
             cna_local_stats = cna_country_stats.get()[country_feature.GetFID()]
+            global_stats[source_var]['sum'] += cna_local_stats['sum']
+            global_stats[source_var]['count'] += cna_local_stats['count']
+            global_stats[source_var]['nodata_count'] += cna_local_stats['nodata_count']
+
             if cna_local_stats['count'] == 0:
                 cna_local_stats['count'] = 1
             country_stat_results[country_name][source_var]['cna_avg'] = cna_local_stats['sum']/cna_local_stats['count']
             country_stat_results[country_name][source_var]['cna_coverage'] = 100*cna_local_stats['count']/(cna_local_stats['nodata_count']+cna_local_stats['count'])
 
             raw_tree_local_stats = raw_tree_country_stats.get()[country_feature.GetFID()]
+            global_stats[source_var]['raw_sum'] += raw_tree_local_stats['sum']
+            global_stats[source_var]['raw_count'] += raw_tree_local_stats['count']
+            global_stats[source_var]['raw_nodata_count'] += raw_tree_local_stats['nodata_count']
             if raw_tree_local_stats['count'] == 0:
                 raw_tree_local_stats['count'] = 1
             country_stat_results[country_name][source_var]['raw_tree_avg'] = raw_tree_local_stats['sum']/raw_tree_local_stats['count']
             country_stat_results[country_name][source_var]['raw_tree_coverage'] = 100*raw_tree_local_stats['count']/(raw_tree_local_stats['nodata_count']+raw_tree_local_stats['count'])
+            country_stat_results[country_name]['area_sq_km'] = country_feature.GetField('area')/1000**2
 
+    for source_var in global_stats:
+        country_stat_results['0_GLOBAL'][source_var]['cna_avg'] = global_stats[source_var]['sum']/global_stats[source_var]['count']
+        country_stat_results['0_GLOBAL'][source_var]['cna_coverage'] = global_stats[source_var]['sum']/(global_stats[source_var]['nodata_count']+global_stats[source_var]['count'])
+        country_stat_results['0_GLOBAL'][source_var]['raw_tree_avg'] = global_stats[source_var]['raw_sum']/global_stats[source_var]['raw_count']
+        country_stat_results['0_GLOBAL'][source_var]['raw_tree_coverage'] = global_stats[source_var]['raw_sum']/(global_stats[source_var]['raw_nodata_count']+global_stats[source_var]['count'])
 
     # what fraction of the pixels have a positive change in diff
     # what's the average of the % of forest pixels in the diff
@@ -144,6 +156,7 @@ def main():
             f"{local_stats['RF']['raw_tree_avg']},{local_stats['RFAF']['raw_tree_avg']},{local_stats['RFAFRS']['raw_tree_avg']},"
             f"{local_stats['RF']['cna_coverage']},{local_stats['RFAF']['cna_coverage']},{local_stats['RFAFRS']['cna_coverage']},"
             f"{local_stats['RF']['cna_avg']},{local_stats['RFAF']['cna_avg']},{local_stats['RFAFRS']['cna_avg']},"
+            f"{local_stats['area_sq_km']}"
             "\n")
 
         # 'country name,'
