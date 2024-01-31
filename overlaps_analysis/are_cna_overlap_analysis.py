@@ -163,7 +163,7 @@ def main():
         country_name = country_feature.GetField('nev_name')
         country_stat_results[country_name]['area_sq_km'] = country_feature.GetField('area')/1000**2
         cna_stats = cna_in_country_stats.get()[country_feature.GetFID()]
-        country_stat_results[country_name]['CNA_country_percent_cover'] = cna_stats['count']/(cna_stats['count']+cna_stats['nodata_count'])
+        country_stat_results[country_name]['CNA_country_percent_cover'] = 100*cna_stats['count']/(cna_stats['count']+cna_stats['nodata_count'])
         country_stat_results['0_GLOBAL']['area_sq_km'] += country_stat_results[country_name]['area_sq_km']
 
     for source_var in global_stats:
