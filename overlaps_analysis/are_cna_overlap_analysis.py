@@ -44,6 +44,7 @@ COUNTRY_VECTOR_PATH = "../data/countries_iso3_md5_6fb2431e911401992e6e56ddf0a9bc
 WORKING_DIR = 'are_cna_overlap_analysis_workspace'
 os.makedirs(WORKING_DIR, exist_ok=True)
 
+
 def main():
     table_file = open('summary.csv', 'w')
     table_file.write(
