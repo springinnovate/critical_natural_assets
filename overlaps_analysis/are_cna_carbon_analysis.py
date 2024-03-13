@@ -13,6 +13,7 @@ Script to mask out the carbon by CNA and do other zonal stats, calculations as:
 """
 import os
 
+import pandas
 import numpy
 from ecoshard import geoprocessing
 from osgeo import gdal
@@ -43,6 +44,7 @@ OPERATIONS = [
     ('NoLURSDiff', 'cna_RFAFRS_diff_RFAF', 'carbon_RFAFRS_CNA'),
     ]
 
+AGGREGATE_VECTOR_PATH = r"D:\repositories\critical_natural_assets\data\countries_iso3_md5_6fb2431e911401992e6e56ddf0a9bcda.gpkg"
 
 WORKSPACE_DIR = 'are_cna_carbon_analysis_workspace'
 os.makedirs(WORKSPACE_DIR, exist_ok=True)
@@ -67,7 +69,31 @@ def _calc_carbon_per_cell(
     return result
 
 
+def fid_to_name(vector_path):
+    fid_to_name_map = {}
+    vector = gdal.OpenEx(vector_path, gdal.OF_VECTOR)
+    layer = vector.GetLayer()
+    for feature in layer:
+        fid_to_name_map[feature.GetFID()] = feature.GetField('nev_name')
+    return fid_to_name_map
+
+
+def extract_sum_and_name(zonal_map, fid_to_name):
+    name_to_sum_map = {}
+    for fid, info_dict in zonal_map.items():
+        name_to_sum_map[fid_to_name[fid]] = info_dict['sum']
+    return name_to_sum_map
+
+
+def add_data(df, column_name, data_dict):
+    df[column_name] = pandas.Series(data_dict)
+
+
 def main():
+    fid_to_name_map = fid_to_name(AGGREGATE_VECTOR_PATH)
+    countries = sorted(fid_to_name_map.values())
+    zonal_dataframe = pandas.DataFrame(index=countries)
+
     for carbon_density_key, coverage_key, target_prefix in OPERATIONS:
         print(f'processing {target_prefix}')
         target_path = os.path.join(WORKSPACE_DIR, f'{target_prefix}.tif')
@@ -112,7 +138,15 @@ def main():
             gdal.GDT_Float32,
             NODATA_THRESHOLD,
             allow_different_blocksize=True)
+        zonal_stats = geoprocessing.zonal_statistics(
+            (target_path, 1), AGGREGATE_VECTOR_PATH,
+            polygons_might_overlap=False,
+            working_dir=intermediate_dir,
+            clean_working_dir=True)
+        country_sums = extract_sum_and_name(zonal_stats, fid_to_name_map)
+        zonal_dataframe[target_prefix] = pandas.Series(country_sums)
         print(f'done with {target_path}')
+    zonal_dataframe.to_csv('are_cna_carbon_summary.csv')
     print('all done!')
 
 
