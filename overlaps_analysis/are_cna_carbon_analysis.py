@@ -38,10 +38,10 @@ CELL_AREA_KM2_PATH = r"D:\repositories\critical_natural_assets\data\carbon\sq_km
 OPERATIONS = [
     ('NoLURFDiff', 'RF_diff_Hist', 'carbon_RF'),
     ('NoLURFDiff', 'cna_RF_diff_Hist', 'carbon_RF_CNA'),
-    ('NoLUAFDiff', 'RFAF_diff_RF', 'carbon_RFAF'),
-    ('NoLUAFDiff', 'cna_RFAF_diff_RF', 'carbon_RFAF_CNA'),
-    ('NoLURSDiff', 'RFAFRS_diff_RFAF', 'carbon_RFAFRS'),
-    ('NoLURSDiff', 'cna_RFAFRS_diff_RFAF', 'carbon_RFAFRS_CNA'),
+    ('NoLUAFDiff', 'RFAF_diff_RF', 'carbon_AF'),
+    ('NoLUAFDiff', 'cna_RFAF_diff_RF', 'carbon_AF_CNA'),
+    ('NoLURSDiff', 'RFAFRS_diff_RFAF', 'carbon_RS'),
+    ('NoLURSDiff', 'cna_RFAFRS_diff_RFAF', 'carbon_RS_CNA'),
     ]
 
 AGGREGATE_VECTOR_PATH = r"D:\repositories\critical_natural_assets\data\countries_iso3_md5_6fb2431e911401992e6e56ddf0a9bcda.gpkg"
